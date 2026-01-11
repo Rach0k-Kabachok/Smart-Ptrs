@@ -1,56 +1,103 @@
 #pragma once
 
-#include "compressed_pair.h"
+#include <utility>
+#include <type_traits>
 
-#include <cstddef>  // std::nullptr_t
-
-struct Slug {};
-
-// Primary template
-template <typename T, typename Deleter = Slug>
-class UniquePtr {
+template <typename T, int ElementInd, bool IsEmpty = std::is_empty_v<T> && !std::is_final_v<T>>
+class CompressedElement {
 public:
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Constructors
+    CompressedElement() : value_(){};
 
-    explicit UniquePtr(T* ptr = nullptr);
-    UniquePtr(T* ptr, Deleter deleter);
+    CompressedElement(const T& value) : value_(value) {
+    }
 
-    UniquePtr(UniquePtr&& other);
+    CompressedElement(T&& value) : value_(std::move(value)) {
+    }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // `operator=`-s
+    CompressedElement operator=(const CompressedElement& other) = delete;
+    CompressedElement operator=(CompressedElement&& other) = delete;
 
-    UniquePtr& operator=(UniquePtr&& other);
-    UniquePtr& operator=(std::nullptr_t);
+    const T& GetVal() const {
+        return value_;
+    }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Destructor
+    T& GetVal() {
+        return value_;
+    }
 
-    ~UniquePtr();
+    ~CompressedElement() = default;
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Modifiers
-
-    T* Release();
-    void Reset(T* ptr = nullptr);
-    void Swap(UniquePtr& other);
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Observers
-
-    T* Get() const;
-    Deleter& GetDeleter();
-    const Deleter& GetDeleter() const;
-    explicit operator bool() const;
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    // Single-object dereference operators
-
-    T& operator*() const;
-    T* operator->() const;
+private:
+    T value_;
 };
 
-// Specialization for arrays
-template <typename T, typename Deleter>
-class UniquePtr<T[], Deleter>;
+template <typename T, int ElementInd>
+class CompressedElement<T, ElementInd, true> : private T {
+public:
+    CompressedElement() = default;
+
+    CompressedElement(const T& value) : T(value) {
+    }
+
+    CompressedElement(T&& value) : T(std::move(value)) {
+    }
+
+    CompressedElement operator=(const T& value) = delete;
+    CompressedElement operator=(T&& value) = delete;
+
+    const T& GetVal() const {
+        return *this;
+    }
+
+    T& GetVal() {
+        return *this;
+    }
+
+    ~CompressedElement() = default;
+};
+
+template <typename F, typename S>
+class CompressedPair : private CompressedElement<F, 0>, private CompressedElement<S, 1> {
+public:
+    CompressedPair() = default;
+
+    CompressedPair(const F& first, const S& second) : FirstElement(first), SecondElement(second) {
+    }
+
+    CompressedPair(const F& first, S&& second)
+        : FirstElement(first), SecondElement(std::move(second)) {
+    }
+
+    CompressedPair(F&& first, const S& second)
+        : FirstElement(std::move(first)), SecondElement(second) {
+    }
+
+    CompressedPair(F&& first, S&& second)
+        : FirstElement(std::move(first)), SecondElement(std::move(second)) {
+    }
+
+    CompressedPair operator=(const CompressedPair& other) = delete;
+    CompressedPair operator=(CompressedPair&& other) = delete;
+
+    F& GetFirst() {
+        return FirstElement::GetVal();
+    }
+
+    const F& GetFirst() const {
+        return FirstElement::GetVal();
+    }
+
+    S& GetSecond() {
+        return SecondElement::GetVal();
+    }
+
+    const S& GetSecond() const {
+        return SecondElement::GetVal();
+    }
+
+    ~CompressedPair() = default;
+
+private:
+    using FirstElement = CompressedElement<F, 0>;
+    using SecondElement = CompressedElement<S, 1>;
+};

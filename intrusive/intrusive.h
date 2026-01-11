@@ -1,85 +1,103 @@
 #pragma once
 
-#include <cstddef> // for std::nullptr_t
-#include <utility> // for std::exchange / std::swap
+#include <utility>
+#include <type_traits>
 
-
-class SimpleCounter {
+template <typename T, int ElementInd, bool IsEmpty = std::is_empty_v<T> && !std::is_final_v<T>>
+class CompressedElement {
 public:
-    size_t IncRef();
-    size_t DecRef();
-    size_t RefCount() const;
+    CompressedElement() : value_(){};
 
-private:
-    size_t count_ = 0;
-};
-
-struct DefaultDelete {
-    template <typename T>
-    static void Destroy(T* object) {
-        delete object;
+    CompressedElement(const T& value) : value_(value) {
     }
-};
 
-template <typename Derived, typename Counter, typename Deleter>
-class RefCounted {
-public:
-    // Increase reference counter.
-    void IncRef();
+    CompressedElement(T&& value) : value_(std::move(value)) {
+    }
 
-    // Decrease reference counter.
-    // Destroy object using Deleter when the last instance dies.
-    void DecRef();
+    CompressedElement operator=(const CompressedElement& other) = delete;
+    CompressedElement operator=(CompressedElement&& other) = delete;
 
-    // Get current counter value (the number of strong references).
-    size_t RefCount() const;
+    const T& GetVal() const {
+        return value_;
+    }
+
+    T& GetVal() {
+        return value_;
+    }
+
+    ~CompressedElement() = default;
 
 private:
-    Counter counter_;
+    T value_;
 };
 
-template <typename Derived, typename D = DefaultDelete>
-using SimpleRefCounted = RefCounted<Derived, SimpleCounter, D>;
-
-template <typename T>
-class IntrusivePtr {
-    template <typename Y>
-    friend class IntrusivePtr;
-
+template <typename T, int ElementInd>
+class CompressedElement<T, ElementInd, true> : private T {
 public:
-    // Constructors
-    IntrusivePtr();
-    IntrusivePtr(std::nullptr_t);
-    IntrusivePtr(T* ptr);
+    CompressedElement() = default;
 
-    template <typename Y>
-    IntrusivePtr(const IntrusivePtr<Y>& other);
+    CompressedElement(const T& value) : T(value) {
+    }
 
-    template <typename Y>
-    IntrusivePtr(IntrusivePtr<Y>&& other);
+    CompressedElement(T&& value) : T(std::move(value)) {
+    }
 
-    IntrusivePtr(const IntrusivePtr& other);
-    IntrusivePtr(IntrusivePtr&& other);
+    CompressedElement operator=(const T& value) = delete;
+    CompressedElement operator=(T&& value) = delete;
 
-    // `operator=`-s
-    IntrusivePtr& operator=(const IntrusivePtr& other);
-    IntrusivePtr& operator=(IntrusivePtr&& other);
+    const T& GetVal() const {
+        return *this;
+    }
 
-    // Destructor
-    ~IntrusivePtr();
+    T& GetVal() {
+        return *this;
+    }
 
-    // Modifiers
-    void Reset();
-    void Reset(T* ptr);
-    void Swap(IntrusivePtr& other);
-
-    // Observers
-    T* Get() const;
-    T& operator*() const;
-    T* operator->() const;
-    size_t UseCount() const;
-    explicit operator bool() const;
+    ~CompressedElement() = default;
 };
 
-template <typename T, typename ...Args>
-IntrusivePtr<T> MakeIntrusive(Args&& ...args);
+template <typename F, typename S>
+class CompressedPair : private CompressedElement<F, 0>, private CompressedElement<S, 1> {
+public:
+    CompressedPair() = default;
+
+    CompressedPair(const F& first, const S& second) : FirstElement(first), SecondElement(second) {
+    }
+
+    CompressedPair(const F& first, S&& second)
+        : FirstElement(first), SecondElement(std::move(second)) {
+    }
+
+    CompressedPair(F&& first, const S& second)
+        : FirstElement(std::move(first)), SecondElement(second) {
+    }
+
+    CompressedPair(F&& first, S&& second)
+        : FirstElement(std::move(first)), SecondElement(std::move(second)) {
+    }
+
+    CompressedPair operator=(const CompressedPair& other) = delete;
+    CompressedPair operator=(CompressedPair&& other) = delete;
+
+    F& GetFirst() {
+        return FirstElement::GetVal();
+    }
+
+    const F& GetFirst() const {
+        return FirstElement::GetVal();
+    }
+
+    S& GetSecond() {
+        return SecondElement::GetVal();
+    }
+
+    const S& GetSecond() const {
+        return SecondElement::GetVal();
+    }
+
+    ~CompressedPair() = default;
+
+private:
+    using FirstElement = CompressedElement<F, 0>;
+    using SecondElement = CompressedElement<S, 1>;
+};
